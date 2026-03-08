@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Lightweight metadata lookup for scientific papers"
 requires-python = ">=3.11"
 license = "LGPL-3.0-or-later"
+authors = [{name = "Reto Stamm", email = "reto@retostamm.com"}]
 readme = "README.md"
 keywords = ["metadata", "doi", "crossref", "semantic-scholar", "scientific-papers", "pdf"]
 classifiers = [
@@ -30,9 +31,25 @@ dependencies = [
     "typer>=0.12",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "black>=24.0",
+    "ruff>=0.5",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/acatome_meta"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.black]
+line-length = 88
+
+[tool.ruff]
+line-length = 88
