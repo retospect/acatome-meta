@@ -6,6 +6,14 @@ import os
 import pytest
 from pathlib import Path
 
+
+def _has_psycopg() -> bool:
+    try:
+        import psycopg  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
 from acatome_meta.config import (
     AcatomeConfig,
     BackendMissingError,
@@ -195,12 +203,15 @@ class TestLoadConfig:
 
 
 class TestBackendValidation:
+    @pytest.mark.skipif(
+        not _has_psycopg(), reason="psycopg not installed"
+    )
     def test_postgres_ok_when_installed(self, tmp_path, monkeypatch):
-        """No error when psycopg is available (it is in dev deps)."""
+        """No error when psycopg is available."""
         monkeypatch.chdir(tmp_path)
         toml = tmp_path / "acatome.toml"
         toml.write_text('[store.vector]\nbackend = "postgres"\n')
-        cfg = load_config()  # psycopg is installed in dev deps
+        cfg = load_config()
         assert cfg.store.vector_backend == "postgres"
 
     def test_neo4j_missing_raises(self, tmp_path, monkeypatch):
