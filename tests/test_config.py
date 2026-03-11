@@ -19,6 +19,7 @@ from acatome_meta.config import (
     BackendMissingError,
     EmbedProfile,
     load_config,
+    ensure_config,
     _apply_toml,
     _apply_env,
 )
@@ -159,13 +160,19 @@ class TestApplyEnv:
 
 
 class TestLoadConfig:
-    def test_load_defaults(self, tmp_path, monkeypatch):
+    def test_load_defaults_autodetect(self, tmp_path, monkeypatch):
+        """With no config file, backends are auto-detected from installed packages."""
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr("acatome_meta.config.ACATOME_HOME", tmp_path / ".acatome")
         monkeypatch.delenv("ACATOME_CONFIG", raising=False)
         monkeypatch.delenv("SEMANTIC_SCHOLAR_API_KEY", raising=False)
         cfg = load_config()
-        assert cfg.store.vector_backend == "chroma"
+        if _has_psycopg():
+            assert cfg.store.vector_backend == "postgres"
+            assert cfg.store.metadata_backend == "postgres"
+        else:
+            assert cfg.store.vector_backend == "chroma"
+            assert cfg.store.metadata_backend == "sqlite"
 
     def test_load_local_toml(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -214,11 +221,25 @@ class TestBackendValidation:
         cfg = load_config()
         assert cfg.store.vector_backend == "postgres"
 
-    def test_neo4j_missing_raises(self, tmp_path, monkeypatch):
+    def test_postgres_explicit_missing_shows_source(self, tmp_path, monkeypatch):
+        """Config explicitly sets postgres but psycopg missing → error names the file."""
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("acatome_meta.config.ACATOME_HOME", tmp_path / ".acatome")
+        monkeypatch.delenv("ACATOME_CONFIG", raising=False)
+        monkeypatch.setattr("acatome_meta.config._has_psycopg", lambda: False)
+        toml = tmp_path / "acatome.toml"
+        toml.write_text('[store]\nmetadata_backend = "postgres"\n')
+        with pytest.raises(BackendMissingError, match="acatome.toml"):
+            load_config()
+
+    def test_neo4j_explicit_missing_shows_source(self, tmp_path, monkeypatch):
+        """Config explicitly sets neo4j but driver missing → error names the file."""
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("acatome_meta.config.ACATOME_HOME", tmp_path / ".acatome")
+        monkeypatch.delenv("ACATOME_CONFIG", raising=False)
         toml = tmp_path / "acatome.toml"
         toml.write_text('[store.graph]\nbackend = "neo4j"\n')
-        with pytest.raises(BackendMissingError, match="neo4j"):
+        with pytest.raises(BackendMissingError, match="acatome.toml"):
             load_config()
 
     def test_validate_false_skips_check(self, tmp_path, monkeypatch):
@@ -227,3 +248,29 @@ class TestBackendValidation:
         toml.write_text('[store.graph]\nbackend = "neo4j"\n')
         cfg = load_config(validate=False)  # Should not raise
         assert cfg.store.graph_backend == "neo4j"
+
+
+class TestEnsureConfig:
+    def test_creates_config_file(self, tmp_path, monkeypatch):
+        """ensure_config() writes a config file if none exists."""
+        fake_home = tmp_path / ".acatome"
+        monkeypatch.setattr("acatome_meta.config.ACATOME_HOME", fake_home)
+        path = ensure_config()
+        assert path.exists()
+        content = path.read_text()
+        assert "[store]" in content
+        if _has_psycopg():
+            assert "postgres" in content
+        else:
+            assert "sqlite" in content
+            assert "chroma" in content
+
+    def test_does_not_overwrite(self, tmp_path, monkeypatch):
+        """ensure_config() leaves existing config alone."""
+        fake_home = tmp_path / ".acatome"
+        fake_home.mkdir(parents=True)
+        config = fake_home / "config.toml"
+        config.write_text("# my custom config\n")
+        monkeypatch.setattr("acatome_meta.config.ACATOME_HOME", fake_home)
+        path = ensure_config()
+        assert path.read_text() == "# my custom config\n"
