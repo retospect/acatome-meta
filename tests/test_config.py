@@ -221,16 +221,18 @@ class TestBackendValidation:
         cfg = load_config()
         assert cfg.store.vector_backend == "postgres"
 
-    def test_postgres_explicit_missing_shows_source(self, tmp_path, monkeypatch):
-        """Config explicitly sets postgres but psycopg missing → error names the file."""
+    def test_postgres_explicit_missing_warns_and_falls_back(self, tmp_path, monkeypatch):
+        """Config explicitly sets postgres but psycopg missing → warn + fallback."""
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr("acatome_meta.config.ACATOME_HOME", tmp_path / ".acatome")
         monkeypatch.delenv("ACATOME_CONFIG", raising=False)
         monkeypatch.setattr("acatome_meta.config._has_psycopg", lambda: False)
         toml = tmp_path / "acatome.toml"
         toml.write_text('[store]\nmetadata_backend = "postgres"\n')
-        with pytest.raises(BackendMissingError, match="acatome.toml"):
-            load_config()
+        with pytest.warns(UserWarning, match="postgres.*not installed.*Falling back"):
+            cfg = load_config()
+        assert cfg.store.metadata_backend == "sqlite"
+        assert cfg.store.vector_backend == "chroma"
 
     def test_neo4j_explicit_missing_shows_source(self, tmp_path, monkeypatch):
         """Config explicitly sets neo4j but driver missing → error names the file."""

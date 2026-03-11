@@ -140,6 +140,15 @@ def load_config(*, validate: bool = True) -> AcatomeConfig:
     custom_path_str = os.environ.get("ACATOME_CONFIG")
     custom_path = Path(custom_path_str) if custom_path_str else None
 
+    # First run: if no config exists anywhere, generate one based on
+    # what's installed (psycopg → postgres, else sqlite/chroma)
+    if (
+        not global_path.exists()
+        and not local_path.exists()
+        and custom_path is None
+    ):
+        ensure_config()
+
     for path in [global_path, local_path, custom_path]:
         if path is not None and path.exists():
             with open(path, "rb") as f:
@@ -230,14 +239,19 @@ def _resolve_backends(
     pg_explicit = any(f in sources for f in pg_fields)
 
     if pg_explicit and pg_requested and not _has_psycopg():
-        # Config file explicitly asked for postgres but it's not installed
+        # Config says postgres but psycopg isn't installed.
+        # Since postgres is literally impossible without psycopg,
+        # there's no risk of diverging databases — safe to fall back.
         src_files = sorted(set(sources[f] for f in pg_fields if f in sources))
-        raise BackendMissingError(
-            f"Backend 'postgres' was set in: {', '.join(src_files)}\n"
-            f"but psycopg is not installed.\n"
-            f'Install with: pip install "acatome-store[postgres]"\n'
-            f"Or change the backend to 'sqlite'/'chroma' in your config."
+        warnings.warn(
+            f"Backend 'postgres' was set in: {', '.join(src_files)} "
+            f"but psycopg is not installed. "
+            f"Falling back to sqlite/chroma. "
+            f'Install psycopg to use postgres: pip install "acatome-store[postgres]"',
+            stacklevel=2,
         )
+        cfg.store.metadata_backend = "sqlite"
+        cfg.store.vector_backend = "chroma"
 
     if not pg_explicit:
         # No config file set backend — auto-detect from installed packages
