@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from acatome_meta.semantic_scholar import get_paper_by_id
-
 from semanticscholar import SemanticScholar
 from tenacity import (
     retry,

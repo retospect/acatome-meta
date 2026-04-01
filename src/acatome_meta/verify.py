@@ -69,12 +69,12 @@ def verify_metadata(
             surname = (
                 name.split(",")[0].strip()
                 if "," in name
-                else name.split()[-1] if name.split() else ""
+                else name.split()[-1]
+                if name.split()
+                else ""
             )
             if surname:
-                score = fuzz.partial_ratio(
-                    _normalize(surname), norm_text_5k
-                )
+                score = fuzz.partial_ratio(_normalize(surname), norm_text_5k)
                 if score < threshold:
                     warnings.append(
                         f"Author surname '{surname}' scored {score} < {threshold}"

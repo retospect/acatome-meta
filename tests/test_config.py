@@ -2,26 +2,27 @@
 
 from __future__ import annotations
 
-import os
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 def _has_psycopg() -> bool:
     try:
         import psycopg  # noqa: F401
+
         return True
     except ImportError:
         return False
 
+
 from acatome_meta.config import (
     AcatomeConfig,
     BackendMissingError,
-    EmbedProfile,
-    load_config,
-    ensure_config,
-    _apply_toml,
     _apply_env,
+    _apply_toml,
+    ensure_config,
+    load_config,
 )
 
 
@@ -210,9 +211,7 @@ class TestLoadConfig:
 
 
 class TestBackendValidation:
-    @pytest.mark.skipif(
-        not _has_psycopg(), reason="psycopg not installed"
-    )
+    @pytest.mark.skipif(not _has_psycopg(), reason="psycopg not installed")
     def test_postgres_ok_when_installed(self, tmp_path, monkeypatch):
         """No error when psycopg is available."""
         monkeypatch.chdir(tmp_path)
@@ -221,7 +220,9 @@ class TestBackendValidation:
         cfg = load_config()
         assert cfg.store.vector_backend == "postgres"
 
-    def test_postgres_explicit_missing_warns_and_falls_back(self, tmp_path, monkeypatch):
+    def test_postgres_explicit_missing_warns_and_falls_back(
+        self, tmp_path, monkeypatch
+    ):
         """Config explicitly sets postgres but psycopg missing → warn + fallback."""
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr("acatome_meta.config.ACATOME_HOME", tmp_path / ".acatome")

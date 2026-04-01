@@ -1,7 +1,9 @@
 """acatome-meta: Lightweight metadata lookup for scientific papers."""
 
-from acatome_meta.lookup import lookup, lookup_doi, lookup_title
-from acatome_meta.citations import citations
+from importlib.metadata import version
 
-__all__ = ["lookup", "lookup_doi", "lookup_title", "citations"]
-__version__ = "0.2.2"
+from acatome_meta.citations import citations
+from acatome_meta.lookup import lookup, lookup_doi, lookup_title
+
+__all__ = ["citations", "lookup", "lookup_doi", "lookup_title"]
+__version__ = version("acatome-meta")
