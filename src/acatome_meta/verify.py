@@ -9,6 +9,8 @@ from rapidfuzz import fuzz
 
 # Unicode dashes / hyphens that should all be treated as ASCII hyphen-minus
 _DASH_RE = re.compile(r"[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]")
+# HTML tags (e.g. <sub>, <sup>, <i>) sometimes present in S2 / CrossRef titles
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
 def _normalize(text: str) -> str:
@@ -19,9 +21,12 @@ def _normalize(text: str) -> str:
     - Collapse whitespace
     - Lowercase
     """
+    text = _HTML_TAG_RE.sub("", text)
     text = unicodedata.normalize("NFKC", text)
     text = _DASH_RE.sub("-", text)
     text = re.sub(r"\s+", " ", text).strip()
+    # Rejoin chemical formulas split by HTML tag removal (CO 2 → CO2, H 2 O → H2O)
+    text = re.sub(r"([A-Za-z])\s(\d)", r"\1\2", text)
     return text.lower()
 
 

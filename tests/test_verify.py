@@ -133,6 +133,28 @@ class TestVerifyMetadata:
         verified, warnings = verify_metadata(header, text)
         assert verified is True
 
+    def test_html_sub_tags_in_title(self):
+        """S2 titles with <sub>/<sup> tags should match plain PDF text."""
+        header = {
+            "title": "How CO<sub>2</sub> Self-Consumption Distorts the Apparent Tafel Slope",
+            "authors": [],
+        }
+        text = "How CO2 Self-Consumption Distorts the Apparent Tafel Slope"
+        verified, warnings = verify_metadata(header, text)
+        assert verified is True
+        assert warnings == []
+
+    def test_html_sub_with_whitespace(self):
+        """S2 titles with whitespace around HTML tags (real-world format)."""
+        header = {
+            "title": "Electrocatalytic CO\n                    <sub>2</sub>\n                    Reduction on Pd Nanoplates",
+            "authors": [],
+        }
+        text = "Electrocatalytic CO2 Reduction on Pd Nanoplates"
+        verified, warnings = verify_metadata(header, text)
+        assert verified is True
+        assert warnings == []
+
     def test_genuine_mismatch_still_fails(self):
         """Real mismatches should still be caught after normalization."""
         header = {
