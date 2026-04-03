@@ -37,7 +37,7 @@ class TestDefaults:
         cfg = AcatomeConfig()
         assert "default" in cfg.extract.profiles
         assert "accurate" in cfg.extract.profiles
-        assert cfg.extract.profiles["default"].dim == 384
+        assert cfg.extract.profiles["default"].dim == 1024
         assert cfg.extract.profiles["accurate"].dim == 2560
         assert cfg.extract.profiles["accurate"].matryoshka is True
 

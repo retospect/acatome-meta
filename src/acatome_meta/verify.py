@@ -64,6 +64,9 @@ def verify_metadata(
     authors = header.get("authors", [])
     if authors:
         norm_text_5k = _normalize(first_pages_text[:5000])
+        author_pass = 0
+        author_checked = 0
+        author_warnings: list[str] = []
         for author in authors:
             name = author.get("name", "")
             surname = (
@@ -74,11 +77,20 @@ def verify_metadata(
                 else ""
             )
             if surname:
-                score = fuzz.partial_ratio(_normalize(surname), norm_text_5k)
-                if score < threshold:
-                    warnings.append(
-                        f"Author surname '{surname}' scored {score} < {threshold}"
+                author_checked += 1
+                norm_surname = _normalize(surname)
+                score = fuzz.partial_ratio(norm_surname, norm_text_5k)
+                # Short surnames (≤4 chars) are inherently noisy with partial_ratio
+                effective_threshold = 60 if len(norm_surname) <= 4 else threshold
+                if score >= effective_threshold:
+                    author_pass += 1
+                else:
+                    author_warnings.append(
+                        f"Author surname '{surname}' scored {score} < {effective_threshold}"
                     )
+        # Fail only if we checked authors and NONE matched
+        if author_checked > 0 and author_pass == 0:
+            warnings.extend(author_warnings)
 
     verified = len(warnings) == 0
     return verified, warnings

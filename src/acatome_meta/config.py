@@ -40,9 +40,9 @@ class StoreSection:
 
 @dataclass
 class EmbedProfile:
-    model: str = "all-MiniLM-L6-v2"
-    dim: int = 384
-    provider: str = "chroma"
+    model: str = "BAAI/bge-m3"
+    dim: int = 1024
+    provider: str = "sentence-transformers"
     index_dim: int | None = None
     matryoshka: bool = False
 

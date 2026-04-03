@@ -94,6 +94,45 @@ class TestVerifyMetadata:
         verified, warnings = verify_metadata(header, text)
         assert verified is True
 
+    def test_one_author_passes_multi_author_ok(self):
+        """If at least one author matches, the paper passes."""
+        header = {
+            "title": "Quantum Error Correction",
+            "authors": [
+                {"name": "Zzzzynski, Xander"},
+                {"name": "Smith, John"},
+            ],
+        }
+        text = "Quantum Error Correction\nJohn Smith"
+        verified, warnings = verify_metadata(header, text)
+        assert verified is True
+
+    def test_all_authors_fail_still_rejected(self):
+        """If NO authors match, the paper is rejected."""
+        header = {
+            "title": "Quantum Error Correction",
+            "authors": [
+                {"name": "Zzzzynski, Xander"},
+                {"name": "Qqqbert, Yaroslav"},
+            ],
+        }
+        text = "Quantum Error Correction\nJohn Smith"
+        verified, warnings = verify_metadata(header, text)
+        assert verified is False
+        assert any("Author surname" in w for w in warnings)
+
+    def test_short_surname_lower_threshold(self):
+        """Short surnames (≤4 chars) use a 60 threshold, not 80."""
+        header = {
+            "title": "Quantum Error Correction",
+            "authors": [{"name": "Dai, Yun"}],
+        }
+        # 'dai' is 3 chars — partial_ratio against long text is low
+        # but it should be found in the text with threshold=60
+        text = "Quantum Error Correction\nYun Dai\nDepartment of Chemistry"
+        verified, warnings = verify_metadata(header, text)
+        assert verified is True
+
     def test_genuine_mismatch_still_fails(self):
         """Real mismatches should still be caught after normalization."""
         header = {
