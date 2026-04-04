@@ -103,7 +103,11 @@ def _parse_author_string(author: str) -> list[dict[str, str]]:
         parts = [p.strip() for p in author.split(";") if p.strip()]
     # " and " separated
     elif " and " in author.lower():
-        parts = [p.strip() for p in re.split(r"\s+and\s+", author, flags=re.IGNORECASE) if p.strip()]
+        parts = [
+            p.strip()
+            for p in re.split(r"\s+and\s+", author, flags=re.IGNORECASE)
+            if p.strip()
+        ]
     else:
         parts = [author.strip()]
     return [{"name": p} for p in parts]

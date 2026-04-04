@@ -36,7 +36,9 @@ class TestExtractArxivFromFilename:
     def test_arxiv_with_page_suffix(self):
         """Filenames like 2603.29152v1-4.pdf (pages) — still extract the ID."""
         # The regex matches at the start, so this should work
-        assert _extract_arxiv_from_filename("/papers/2603.29152v1-4.pdf") == "2603.29152"
+        assert (
+            _extract_arxiv_from_filename("/papers/2603.29152v1-4.pdf") == "2603.29152"
+        )
 
 
 class TestParseAuthorString:
