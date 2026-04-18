@@ -7,6 +7,8 @@ import unicodedata
 
 from rapidfuzz import fuzz
 
+from acatome_meta.literature import surname_from_name
+
 # Unicode dashes / hyphens that should all be treated as ASCII hyphen-minus
 _DASH_RE = re.compile(r"[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]")
 # HTML tags (e.g. <sub>, <sup>, <i>) sometimes present in S2 / CrossRef titles
@@ -73,14 +75,7 @@ def verify_metadata(
         author_checked = 0
         author_warnings: list[str] = []
         for author in authors:
-            name = author.get("name", "")
-            surname = (
-                name.split(",")[0].strip()
-                if "," in name
-                else name.split()[-1]
-                if name.split()
-                else ""
-            )
+            surname = surname_from_name(author.get("name", ""))
             if surname:
                 author_checked += 1
                 norm_surname = _normalize(surname)
