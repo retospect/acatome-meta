@@ -336,7 +336,7 @@ def _parse_database_url(url: str) -> dict[str, Any]:
 
     Supports: postgresql[+driver]://user[:password]@host[:port]/dbname
     """
-    from urllib.parse import urlparse, unquote
+    from urllib.parse import unquote, urlparse
 
     parsed = urlparse(url)
     result: dict[str, Any] = {}

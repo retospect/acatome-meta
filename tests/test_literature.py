@@ -19,9 +19,9 @@ class TestSkipEmbedTypes:
         assert isinstance(SKIP_EMBED_TYPES, frozenset)
 
     def test_expected_members(self):
-        assert SKIP_EMBED_TYPES == frozenset(
+        assert frozenset(
             {"section_header", "title", "author", "equation", "junk"}
-        )
+        ) == SKIP_EMBED_TYPES
 
 
 class TestFirstAuthorKey:

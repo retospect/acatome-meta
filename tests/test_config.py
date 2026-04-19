@@ -21,7 +21,6 @@ from acatome_meta.config import (
     BackendMissingError,
     _apply_env,
     _apply_toml,
-    _parse_database_url,
     ensure_config,
     load_config,
 )
