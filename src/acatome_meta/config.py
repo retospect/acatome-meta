@@ -331,20 +331,55 @@ def _apply_toml(cfg: AcatomeConfig, data: dict[str, Any]) -> None:
                 setattr(cfg.api, key, a[key])
 
 
+def _parse_database_url(url: str) -> dict[str, Any]:
+    """Parse a DATABASE_URL into individual pg_* fields.
+
+    Supports: postgresql[+driver]://user[:password]@host[:port]/dbname
+    """
+    from urllib.parse import urlparse, unquote
+
+    parsed = urlparse(url)
+    result: dict[str, Any] = {}
+    if parsed.hostname:
+        result["pg_host"] = parsed.hostname
+    if parsed.port:
+        result["pg_port"] = parsed.port
+    if parsed.username:
+        result["pg_user"] = unquote(parsed.username)
+    if parsed.password:
+        result["pg_password"] = unquote(parsed.password)
+    if parsed.path and parsed.path.strip("/"):
+        result["pg_database"] = parsed.path.strip("/")
+    return result
+
+
 def _apply_env(cfg: AcatomeConfig) -> None:
     """Override config with environment variables.
 
     API keys use standard env var names (OPENAI_API_KEY, ANTHROPIC_API_KEY,
     SEMANTIC_SCHOLAR_API_KEY) so they work with other tools too.
     Acatome-specific config keeps the ACATOME_ prefix.
+
+    DATABASE_URL is parsed as a convenience — individual ACATOME_PG_*
+    vars take precedence over fields extracted from DATABASE_URL.
     """
+    # Parse DATABASE_URL first (lowest priority among env overrides)
+    db_url = os.environ.get("DATABASE_URL")
+    if db_url and db_url.startswith("postgresql"):
+        parsed = _parse_database_url(db_url)
+        for attr, val in parsed.items():
+            setattr(cfg.store, attr, val)
+        cfg.store.metadata_backend = "postgres"
+        cfg.store.vector_backend = "postgres"
+
     env_map = {
-        # Acatome-specific (ACATOME_ prefix)
+        # Acatome-specific (ACATOME_ prefix) — override DATABASE_URL fields
         "ACATOME_PG_PASSWORD": ("store", "pg_password"),
         "ACATOME_PG_HOST": ("store", "pg_host"),
         "ACATOME_PG_PORT": ("store", "pg_port"),
         "ACATOME_PG_DATABASE": ("store", "pg_database"),
         "ACATOME_PG_USER": ("store", "pg_user"),
+        "ACATOME_PG_SCHEMA": ("store", "pg_schema"),
         "ACATOME_NEO4J_PASSWORD": ("store", "neo4j_password"),
         "ACATOME_CROSSREF_MAILTO": ("api", "crossref_mailto"),
         "ACATOME_STORE_PATH": ("store", "path"),

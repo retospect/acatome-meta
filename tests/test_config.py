@@ -21,6 +21,7 @@ from acatome_meta.config import (
     BackendMissingError,
     _apply_env,
     _apply_toml,
+    _parse_database_url,
     ensure_config,
     load_config,
 )
@@ -158,6 +159,60 @@ class TestApplyEnv:
         monkeypatch.setenv("ACATOME_PG_PASSWORD", "env_pw")
         _apply_env(cfg)
         assert cfg.store.pg_password == "env_pw"
+
+    def test_pg_schema(self, monkeypatch):
+        cfg = AcatomeConfig()
+        monkeypatch.setenv("ACATOME_PG_SCHEMA", "public")
+        _apply_env(cfg)
+        assert cfg.store.pg_schema == "public"
+
+    def test_database_url(self, monkeypatch):
+        cfg = AcatomeConfig()
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql://myuser:mypass@db.example.com:5433/mydb",
+        )
+        _apply_env(cfg)
+        assert cfg.store.pg_host == "db.example.com"
+        assert cfg.store.pg_port == 5433
+        assert cfg.store.pg_user == "myuser"
+        assert cfg.store.pg_password == "mypass"
+        assert cfg.store.pg_database == "mydb"
+        assert cfg.store.metadata_backend == "postgres"
+        assert cfg.store.vector_backend == "postgres"
+
+    def test_database_url_with_driver(self, monkeypatch):
+        cfg = AcatomeConfig()
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql+psycopg://user:pw@host:5432/db",
+        )
+        _apply_env(cfg)
+        assert cfg.store.pg_host == "host"
+        assert cfg.store.pg_user == "user"
+
+    def test_acatome_pg_overrides_database_url(self, monkeypatch):
+        """Individual ACATOME_PG_* vars take precedence over DATABASE_URL."""
+        cfg = AcatomeConfig()
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql://urluser:urlpass@urlhost:5432/urldb",
+        )
+        monkeypatch.setenv("ACATOME_PG_HOST", "override-host")
+        monkeypatch.setenv("ACATOME_PG_USER", "override-user")
+        _apply_env(cfg)
+        assert cfg.store.pg_host == "override-host"
+        assert cfg.store.pg_user == "override-user"
+        # Fields not overridden come from DATABASE_URL
+        assert cfg.store.pg_password == "urlpass"
+        assert cfg.store.pg_database == "urldb"
+
+    def test_database_url_non_postgres_ignored(self, monkeypatch):
+        """Non-postgres DATABASE_URL is silently ignored."""
+        cfg = AcatomeConfig()
+        monkeypatch.setenv("DATABASE_URL", "mysql://user:pw@host/db")
+        _apply_env(cfg)
+        assert cfg.store.pg_host == "localhost"  # unchanged default
 
 
 class TestLoadConfig:
