@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import os
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -231,19 +230,16 @@ def _resolve_backends(cfg: AcatomeConfig, sources: dict[str, str]) -> None:
     pg_explicit = any(f in sources for f in pg_fields)
 
     if pg_explicit and pg_requested and not _has_psycopg():
-        # Config says postgres but psycopg isn't installed.
-        # Since postgres is literally impossible without psycopg,
-        # there's no risk of diverging databases — safe to fall back.
+        # Config explicitly selects postgres but psycopg is missing.
+        # Silently falling back to sqlite/chroma corrupts intent: writes
+        # land in the wrong store and the user thinks they succeeded.
+        # Hard-fail with the source file named.
         src_files = sorted(set(sources[f] for f in pg_fields if f in sources))
-        warnings.warn(
-            f"Backend 'postgres' was set in: {', '.join(src_files)} "
-            f"but psycopg is not installed. "
-            f"Falling back to sqlite/chroma. "
-            f'Install psycopg to use postgres: pip install "acatome-store[postgres]"',
-            stacklevel=2,
+        raise BackendMissingError(
+            f"Backend 'postgres' was set in: {', '.join(src_files)}\n"
+            f"but psycopg is not installed.\n"
+            f'Install with: pip install "acatome-store[postgres]"'
         )
-        cfg.store.metadata_backend = "sqlite"
-        cfg.store.vector_backend = "chroma"
 
     if not pg_explicit:
         # No config file set backend — auto-detect from installed packages
