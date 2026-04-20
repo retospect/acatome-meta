@@ -233,9 +233,7 @@ def build_embedder(
 
         def _chroma_embed(texts: list[str]) -> list[list[float]]:
             results = ef(texts)
-            return [
-                e.tolist() if hasattr(e, "tolist") else list(e) for e in results
-            ]
+            return [e.tolist() if hasattr(e, "tolist") else list(e) for e in results]
 
         return _chroma_embed
 

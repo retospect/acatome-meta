@@ -19,9 +19,10 @@ class TestSkipEmbedTypes:
         assert isinstance(SKIP_EMBED_TYPES, frozenset)
 
     def test_expected_members(self):
-        assert frozenset(
-            {"section_header", "title", "author", "equation", "junk"}
-        ) == SKIP_EMBED_TYPES
+        assert (
+            frozenset({"section_header", "title", "author", "equation", "junk"})
+            == SKIP_EMBED_TYPES
+        )
 
 
 class TestFirstAuthorKey:
@@ -106,7 +107,9 @@ class TestMakeSlug:
 
     def test_semicolon_separated_authors(self):
         authors = [{"name": "Daniel S. Levine; Nicholas Liesen; Lauren Chua"}]
-        assert make_slug(authors, 2026, "Open Polymers Dataset") == "danielslevine2026open"
+        assert (
+            make_slug(authors, 2026, "Open Polymers Dataset") == "danielslevine2026open"
+        )
 
     def test_surname_length_cap(self):
         authors = [{"name": "Superlongauthornamethatgoesforeverandever"}]
