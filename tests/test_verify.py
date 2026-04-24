@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from acatome_meta.verify import verify_metadata
+from acatome_meta.verify import (
+    _doi_prefix_in_text,
+    _normalize,
+    _word_overlap_score,
+    verify_metadata,
+)
 
 
 class TestVerifyMetadata:
@@ -164,3 +169,164 @@ class TestVerifyMetadata:
         text = "Heterogeneous single-atom catalysis\nWang et al."
         verified, warnings = verify_metadata(header, text)
         assert verified is False
+
+
+class TestGreekLetterFold:
+    """CrossRef titles use Greek letters; bodies often use Latin transcription.
+
+    The classic failure: title says ``High-κ dielectrics``, body says
+    ``High-k dielectrics`` — partial_ratio collapses because κ vs k
+    derails the string alignment.
+    """
+
+    def test_kappa_fold(self):
+        assert _normalize("High-κ dielectrics") == "high-k dielectrics"
+
+    def test_multiple_greek_letters(self):
+        assert _normalize("α-helix and β-sheet") == "a-helix and b-sheet"
+
+    def test_uppercase_greek(self):
+        assert _normalize("ΔG of reaction") == "dg of reaction"
+
+    def test_high_kappa_title_matches_high_k_body(self):
+        """Regression: nmat769 / Javey 2002 — was scoring 56% pre-Phase-2."""
+        header = {
+            "title": "High-κ dielectrics for advanced carbon-nanotube transistors and logic gates",
+            "authors": [{"name": "Javey, Ali"}],
+        }
+        # Body as PyMuPDF extracts it — note wrapped "H\nigh-κ" and the
+        # Greek κ without a space before "dielectrics" (typical of column-
+        # break artefacts in Nature PDFs).
+        text = (
+            "© 2002 Nature Publishing Group\nARTICLES\n"
+            "Ali Javey, Hyoungsub Kim, Markus Brink, et al.\n"
+            "H\nigh-κdielectrics have been actively pursued to replace SiO2 "
+            "as gate insulators for silicon devices. Carbon nanotube "
+            "transistors with advanced logic gates..."
+        )
+        verified, warnings = verify_metadata(header, text)
+        assert verified is True, f"expected verified, got warnings: {warnings}"
+
+
+class TestWordOverlapScore:
+    def test_full_overlap(self):
+        assert _word_overlap_score("high-k dielectrics carbon nanotube", "high-k dielectrics have been used in carbon nanotube devices") == 100.0
+
+    def test_partial_overlap(self):
+        # 2 of 3 content words appear → 66.7%
+        score = _word_overlap_score("addition enhance flux", "enhance flux measurements")
+        assert 60 <= score <= 70
+
+    def test_stopwords_excluded(self):
+        # Only "quantum" and "correction" are content words; both appear
+        assert _word_overlap_score("the quantum in correction", "quantum error correction methods") == 100.0
+
+    def test_short_words_excluded(self):
+        # "of", "to" would be stopwords anyway, but also under 4 chars
+        assert _word_overlap_score("the a of to as", "something else entirely") == 0.0
+
+    def test_substring_pluralisation(self):
+        # "correction" is a substring of "corrections" → match
+        assert _word_overlap_score("quantum correction methods", "quantum corrections methods work") == 100.0
+
+    def test_empty_title(self):
+        assert _word_overlap_score("", "any text") == 0.0
+
+
+class TestDOIPrefixInText:
+    def test_lowercase_doi_prefix(self):
+        assert _doi_prefix_in_text(
+            "10.1038/nature02792",
+            "Received 22 April; accepted 28 June 2004; doi:10.1038/nature02792.",
+        ) is True
+
+    def test_uppercase_DOI_prefix(self):
+        assert _doi_prefix_in_text(
+            "10.1103/PhysRevLett.89.106801",
+            "We present experimental data.\nDOI: 10.1103/PhysRevLett.89.106801 PACS: 73.63.Fg",
+        ) is True
+
+    def test_doi_org_url(self):
+        assert _doi_prefix_in_text(
+            "10.1021/nl404795z",
+            "See https://doi.org/10.1021/nl404795z for the published version.",
+        ) is True
+
+    def test_dx_doi_org_url(self):
+        assert _doi_prefix_in_text(
+            "10.1021/nl404795z",
+            "dx.doi.org/10.1021/nl404795z",
+        ) is True
+
+    def test_bare_doi_does_not_count(self):
+        # A bare DOI (no prefix) in a reference list should NOT trigger:
+        # it's likely a cited paper's DOI, not this paper's.
+        assert _doi_prefix_in_text(
+            "10.1038/nature02792",
+            "See ref [23] Smith et al., Nature 2004, 10.1038/nature02792 for details.",
+        ) is False
+
+    def test_mismatched_doi(self):
+        assert _doi_prefix_in_text(
+            "10.1038/nature02792",
+            "doi:10.1038/SOMETHING-ELSE",
+        ) is False
+
+    def test_empty_inputs(self):
+        assert _doi_prefix_in_text("", "doi:10.1038/nature02792") is False
+        assert _doi_prefix_in_text("10.1038/nature02792", "") is False
+
+
+class TestDOIConfirmsTitle:
+    """When the publisher's typeset DOI appears in the body, we trust
+    CrossRef's metadata even if the title itself isn't in the extractable
+    text (e.g. partial-page reprints, weird column orderings)."""
+
+    def test_partial_page_extract_with_matching_doi_passes(self):
+        """Regression: nature02817 — PDF is only the last page of the
+        Haugan 2004 paper. Title words aren't in body, but doi:... is."""
+        header = {
+            "title": "Addition of nanoparticle dispersions to enhance flux pinning of the YBa2Cu3O7-x superconductor",
+            "authors": [{"name": "Haugan, T."}],
+            "doi": "10.1038/nature02792",
+        }
+        # Body text without title/abstract but WITH the publisher DOI stamp
+        text = (
+            "composite films had a flatter dependence on applied field. "
+            "The self-field Jc of the composite films were increased... "
+            "Received 22 April; accepted 28 June 2004; doi:10.1038/nature02792. "
+            "T. J. Haugan acknowledges AFRL support."
+        )
+        verified, warnings = verify_metadata(header, text)
+        assert verified is True, f"expected verified, got warnings: {warnings}"
+
+    def test_no_doi_confirmation_still_requires_title_match(self):
+        """Without DOI confirmation, an unmatchable title should still fail."""
+        header = {
+            "title": "Something Completely Unrelated",
+            "authors": [{"name": "Haugan, T."}],
+            "doi": "10.1038/nature02792",
+        }
+        # DOI not in body → can't rely on DOI confirmation
+        text = "Haugan et al. studied various flux pinning mechanisms."
+        verified, warnings = verify_metadata(header, text)
+        assert verified is False
+        assert any("Title mismatch" in w for w in warnings)
+
+
+class TestWordOverlapVerifyGate:
+    def test_body_with_title_words_scattered_passes(self):
+        """Regression: title words present but not contiguous → partial_ratio
+        fails but word_overlap succeeds."""
+        header = {
+            "title": "High-resolution imaging of graphene heterostructures",
+            "authors": [{"name": "Doe, Jane"}],
+        }
+        # Title words appear but not in order and separated by other text
+        text = (
+            "We present a study of graphene devices with high-resolution "
+            "scanning tunnelling microscopy. Our heterostructures show "
+            "novel imaging contrast. Jane Doe led the experimental work."
+        )
+        verified, warnings = verify_metadata(header, text)
+        assert verified is True, f"expected verified, got warnings: {warnings}"

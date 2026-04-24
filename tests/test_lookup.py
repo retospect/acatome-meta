@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from acatome_meta.lookup import _extract_arxiv_from_filename, _parse_author_string
+from unittest.mock import patch
+
+from acatome_meta.lookup import (
+    _extract_arxiv_from_filename,
+    _parse_author_string,
+    lookup,
+)
 
 
 class TestExtractArxivFromFilename:
@@ -65,3 +71,73 @@ class TestParseAuthorString:
 
     def test_none_input(self):
         assert _parse_author_string(None) == []
+
+
+class TestGarbageTitleGatesS2Fallback:
+    """When embedded title is garbage (InDesign filename, tracking ID, etc.)
+    the cascade must skip S2 title fallback, which otherwise returns a
+    random wrong paper with high confidence."""
+
+    _BASE_META = {
+        "pdf_hash": "deadbeef",
+        "page_count": 9,
+        "first_pages_text": "",
+        "info": {},
+        "doi": None,
+    }
+
+    @staticmethod
+    def _fail_s2_loudly(*args, **kwargs):  # pragma: no cover - only called on regression
+        raise AssertionError("lookup_title must not be called for garbage embedded titles")
+
+    def _run_with_garbage_title(self, title: str) -> dict:
+        meta = dict(self._BASE_META)
+        meta["info"] = {"title": title}
+        with patch("acatome_meta.lookup.extract_pdf_meta", return_value=meta), patch(
+            "acatome_meta.lookup.lookup_title",
+            side_effect=self._fail_s2_loudly,
+        ):
+            return lookup("/fake/path.pdf")
+
+    def test_indesign_filename_skips_s2(self):
+        result = self._run_with_garbage_title("nmat1849 Geim Progress Article.indd")
+        assert result["source"] == "embedded"
+        assert result["title"] == ""  # garbage title cleared in fallback
+        assert result["doi"] is None
+
+    def test_page_range_id_skips_s2(self):
+        result = self._run_with_garbage_title("nl404795z 1..9")
+        assert result["source"] == "embedded"
+        assert result["title"] == ""
+
+    def test_revtex_boilerplate_skips_s2(self):
+        result = self._run_with_garbage_title("USING STANDARD PRB S")
+        assert result["source"] == "embedded"
+        assert result["title"] == ""
+
+    def test_numeric_manuscript_id_skips_s2(self):
+        result = self._run_with_garbage_title("78868 651..703")
+        assert result["source"] == "embedded"
+        assert result["title"] == ""
+
+    def test_real_title_still_queries_s2(self):
+        """A plausible title must still hit S2 — regression guard."""
+        meta = dict(self._BASE_META)
+        meta["info"] = {"title": "The rise of graphene"}
+        s2_hit = {
+            "title": "The rise of graphene",
+            "authors": [{"name": "Geim, A. K."}],
+            "year": 2007,
+            "doi": "10.1038/nmat1849",
+            "journal": "Nature Materials",
+            "abstract": "",
+            "entry_type": "article",
+            "source": "s2",
+        }
+        with patch("acatome_meta.lookup.extract_pdf_meta", return_value=meta), patch(
+            "acatome_meta.lookup.lookup_title", return_value=s2_hit
+        ) as m:
+            result = lookup("/fake/path.pdf")
+        m.assert_called_once()
+        assert result["doi"] == "10.1038/nmat1849"
+        assert result["source"] == "s2"

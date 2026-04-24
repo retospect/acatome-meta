@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from acatome_meta.crossref import lookup_crossref
-from acatome_meta.pdf import extract_pdf_meta
+from acatome_meta.pdf import extract_pdf_meta, is_garbage_title, is_pii
 from acatome_meta.semantic_scholar import get_paper_by_id, lookup_s2
 
 # arXiv filename patterns: 2508.20254v1.pdf, 2310.18288v3.pdf, etc.
@@ -51,9 +51,16 @@ def lookup(pdf_path: str) -> dict[str, Any]:
                 result["arxiv_id"] = arxiv_id
             return result
 
-    # Try title → S2
+    # Try title → S2 (skip PII strings and known-garbage patterns).
+    #
+    # Garbage titles (InDesign filenames, manuscript tracking IDs like
+    # "nl404795z 1..9", APS revtex boilerplate like "USING STANDARD PRB S")
+    # poison S2's fuzz search — it returns a random plausible-but-wrong paper
+    # with high confidence. Better to fall through to the embedded-metadata
+    # fallback so the downstream text-rescue step can mine the real title
+    # from block text and re-query S2 with something meaningful.
     title = pdf_meta.get("info", {}).get("title", "")
-    if title:
+    if title and not is_pii(title) and not is_garbage_title(title):
         result = lookup_title(title, s2_key=s2_key)
         if result:
             result["pdf_hash"] = pdf_meta["pdf_hash"]
@@ -65,8 +72,9 @@ def lookup(pdf_path: str) -> dict[str, Any]:
 
     # Fallback: embedded PDF metadata
     info = pdf_meta.get("info", {})
+    raw_title = info.get("title", "")
     return {
-        "title": info.get("title", ""),
+        "title": "" if (is_pii(raw_title) or is_garbage_title(raw_title)) else raw_title,
         "authors": _parse_author_string(info.get("author", "")),
         "year": _parse_year(info.get("creationDate", "")),
         "doi": doi,
