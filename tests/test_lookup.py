@@ -87,15 +87,22 @@ class TestGarbageTitleGatesS2Fallback:
     }
 
     @staticmethod
-    def _fail_s2_loudly(*args, **kwargs):  # pragma: no cover - only called on regression
-        raise AssertionError("lookup_title must not be called for garbage embedded titles")
+    def _fail_s2_loudly(
+        *args, **kwargs
+    ):  # pragma: no cover - only called on regression
+        raise AssertionError(
+            "lookup_title must not be called for garbage embedded titles"
+        )
 
     def _run_with_garbage_title(self, title: str) -> dict:
         meta = dict(self._BASE_META)
         meta["info"] = {"title": title}
-        with patch("acatome_meta.lookup.extract_pdf_meta", return_value=meta), patch(
-            "acatome_meta.lookup.lookup_title",
-            side_effect=self._fail_s2_loudly,
+        with (
+            patch("acatome_meta.lookup.extract_pdf_meta", return_value=meta),
+            patch(
+                "acatome_meta.lookup.lookup_title",
+                side_effect=self._fail_s2_loudly,
+            ),
         ):
             return lookup("/fake/path.pdf")
 
@@ -134,9 +141,10 @@ class TestGarbageTitleGatesS2Fallback:
             "entry_type": "article",
             "source": "s2",
         }
-        with patch("acatome_meta.lookup.extract_pdf_meta", return_value=meta), patch(
-            "acatome_meta.lookup.lookup_title", return_value=s2_hit
-        ) as m:
+        with (
+            patch("acatome_meta.lookup.extract_pdf_meta", return_value=meta),
+            patch("acatome_meta.lookup.lookup_title", return_value=s2_hit) as m,
+        ):
             result = lookup("/fake/path.pdf")
         m.assert_called_once()
         assert result["doi"] == "10.1038/nmat1849"

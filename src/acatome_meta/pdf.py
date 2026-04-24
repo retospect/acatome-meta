@@ -34,10 +34,10 @@ _REFERENCES_HEADING_RE = re.compile(
 # Formatted: S0009-2614(95)00905-J or 0009-2614(80)80221-1
 # The PII *is* the DOI suffix for Elsevier: DOI = 10.1016/{PII}
 _PII_RE = re.compile(
-    r"(?:PII[:\s]*)?"               # optional "PII:" prefix
-    r"(S?\d{4}-\d{3}[\dX]"          # ISSN part: S0009-2614 or 0009-2614
-    r"\(\d{2}\)"                     # (95)
-    r"\d{4,5}-[A-Z\d])"             # 00905-J  (check digit: letter or digit)
+    r"(?:PII[:\s]*)?"  # optional "PII:" prefix
+    r"(S?\d{4}-\d{3}[\dX]"  # ISSN part: S0009-2614 or 0009-2614
+    r"\(\d{2}\)"  # (95)
+    r"\d{4,5}-[A-Z\d])"  # 00905-J  (check digit: letter or digit)
 )
 
 

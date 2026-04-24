@@ -210,16 +210,29 @@ class TestGreekLetterFold:
 
 class TestWordOverlapScore:
     def test_full_overlap(self):
-        assert _word_overlap_score("high-k dielectrics carbon nanotube", "high-k dielectrics have been used in carbon nanotube devices") == 100.0
+        assert (
+            _word_overlap_score(
+                "high-k dielectrics carbon nanotube",
+                "high-k dielectrics have been used in carbon nanotube devices",
+            )
+            == 100.0
+        )
 
     def test_partial_overlap(self):
         # 2 of 3 content words appear → 66.7%
-        score = _word_overlap_score("addition enhance flux", "enhance flux measurements")
+        score = _word_overlap_score(
+            "addition enhance flux", "enhance flux measurements"
+        )
         assert 60 <= score <= 70
 
     def test_stopwords_excluded(self):
         # Only "quantum" and "correction" are content words; both appear
-        assert _word_overlap_score("the quantum in correction", "quantum error correction methods") == 100.0
+        assert (
+            _word_overlap_score(
+                "the quantum in correction", "quantum error correction methods"
+            )
+            == 100.0
+        )
 
     def test_short_words_excluded(self):
         # "of", "to" would be stopwords anyway, but also under 4 chars
@@ -227,7 +240,12 @@ class TestWordOverlapScore:
 
     def test_substring_pluralisation(self):
         # "correction" is a substring of "corrections" → match
-        assert _word_overlap_score("quantum correction methods", "quantum corrections methods work") == 100.0
+        assert (
+            _word_overlap_score(
+                "quantum correction methods", "quantum corrections methods work"
+            )
+            == 100.0
+        )
 
     def test_empty_title(self):
         assert _word_overlap_score("", "any text") == 0.0
@@ -235,42 +253,60 @@ class TestWordOverlapScore:
 
 class TestDOIPrefixInText:
     def test_lowercase_doi_prefix(self):
-        assert _doi_prefix_in_text(
-            "10.1038/nature02792",
-            "Received 22 April; accepted 28 June 2004; doi:10.1038/nature02792.",
-        ) is True
+        assert (
+            _doi_prefix_in_text(
+                "10.1038/nature02792",
+                "Received 22 April; accepted 28 June 2004; doi:10.1038/nature02792.",
+            )
+            is True
+        )
 
     def test_uppercase_DOI_prefix(self):
-        assert _doi_prefix_in_text(
-            "10.1103/PhysRevLett.89.106801",
-            "We present experimental data.\nDOI: 10.1103/PhysRevLett.89.106801 PACS: 73.63.Fg",
-        ) is True
+        assert (
+            _doi_prefix_in_text(
+                "10.1103/PhysRevLett.89.106801",
+                "We present experimental data.\nDOI: 10.1103/PhysRevLett.89.106801 PACS: 73.63.Fg",
+            )
+            is True
+        )
 
     def test_doi_org_url(self):
-        assert _doi_prefix_in_text(
-            "10.1021/nl404795z",
-            "See https://doi.org/10.1021/nl404795z for the published version.",
-        ) is True
+        assert (
+            _doi_prefix_in_text(
+                "10.1021/nl404795z",
+                "See https://doi.org/10.1021/nl404795z for the published version.",
+            )
+            is True
+        )
 
     def test_dx_doi_org_url(self):
-        assert _doi_prefix_in_text(
-            "10.1021/nl404795z",
-            "dx.doi.org/10.1021/nl404795z",
-        ) is True
+        assert (
+            _doi_prefix_in_text(
+                "10.1021/nl404795z",
+                "dx.doi.org/10.1021/nl404795z",
+            )
+            is True
+        )
 
     def test_bare_doi_does_not_count(self):
         # A bare DOI (no prefix) in a reference list should NOT trigger:
         # it's likely a cited paper's DOI, not this paper's.
-        assert _doi_prefix_in_text(
-            "10.1038/nature02792",
-            "See ref [23] Smith et al., Nature 2004, 10.1038/nature02792 for details.",
-        ) is False
+        assert (
+            _doi_prefix_in_text(
+                "10.1038/nature02792",
+                "See ref [23] Smith et al., Nature 2004, 10.1038/nature02792 for details.",
+            )
+            is False
+        )
 
     def test_mismatched_doi(self):
-        assert _doi_prefix_in_text(
-            "10.1038/nature02792",
-            "doi:10.1038/SOMETHING-ELSE",
-        ) is False
+        assert (
+            _doi_prefix_in_text(
+                "10.1038/nature02792",
+                "doi:10.1038/SOMETHING-ELSE",
+            )
+            is False
+        )
 
     def test_empty_inputs(self):
         assert _doi_prefix_in_text("", "doi:10.1038/nature02792") is False

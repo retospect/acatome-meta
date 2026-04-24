@@ -21,15 +21,55 @@ _HTML_TAG_RE = re.compile(r"<[^>]+>")
 # alignment), but 100% after this fold.
 _GREEK_FOLD = str.maketrans(
     {
-        "α": "a", "β": "b", "γ": "g", "δ": "d", "ε": "e", "ζ": "z",
-        "η": "h", "θ": "th", "ι": "i", "κ": "k", "λ": "l", "μ": "u",
-        "ν": "n", "ξ": "x", "ο": "o", "π": "p", "ρ": "r", "σ": "s",
-        "ς": "s", "τ": "t", "υ": "y", "φ": "f", "χ": "ch", "ψ": "ps",
+        "α": "a",
+        "β": "b",
+        "γ": "g",
+        "δ": "d",
+        "ε": "e",
+        "ζ": "z",
+        "η": "h",
+        "θ": "th",
+        "ι": "i",
+        "κ": "k",
+        "λ": "l",
+        "μ": "u",
+        "ν": "n",
+        "ξ": "x",
+        "ο": "o",
+        "π": "p",
+        "ρ": "r",
+        "σ": "s",
+        "ς": "s",
+        "τ": "t",
+        "υ": "y",
+        "φ": "f",
+        "χ": "ch",
+        "ψ": "ps",
         "ω": "o",
-        "Α": "A", "Β": "B", "Γ": "G", "Δ": "D", "Ε": "E", "Ζ": "Z",
-        "Η": "H", "Θ": "Th", "Ι": "I", "Κ": "K", "Λ": "L", "Μ": "M",
-        "Ν": "N", "Ξ": "X", "Ο": "O", "Π": "P", "Ρ": "R", "Σ": "S",
-        "Τ": "T", "Υ": "Y", "Φ": "F", "Χ": "Ch", "Ψ": "Ps", "Ω": "O",
+        "Α": "A",
+        "Β": "B",
+        "Γ": "G",
+        "Δ": "D",
+        "Ε": "E",
+        "Ζ": "Z",
+        "Η": "H",
+        "Θ": "Th",
+        "Ι": "I",
+        "Κ": "K",
+        "Λ": "L",
+        "Μ": "M",
+        "Ν": "N",
+        "Ξ": "X",
+        "Ο": "O",
+        "Π": "P",
+        "Ρ": "R",
+        "Σ": "S",
+        "Τ": "T",
+        "Υ": "Y",
+        "Φ": "F",
+        "Χ": "Ch",
+        "Ψ": "Ps",
+        "Ω": "O",
     }
 )
 
@@ -37,11 +77,47 @@ _GREEK_FOLD = str.maketrans(
 # focuses on distinctive content words.
 _STOPWORDS = frozenset(
     {
-        "a", "an", "the", "of", "in", "on", "at", "to", "for", "by",
-        "with", "and", "or", "but", "not", "from", "into", "onto", "upon",
-        "as", "is", "are", "was", "were", "be", "been", "being", "this",
-        "that", "these", "those", "its", "it", "via", "using", "based",
-        "new", "novel", "study", "studies", "review",
+        "a",
+        "an",
+        "the",
+        "of",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "by",
+        "with",
+        "and",
+        "or",
+        "but",
+        "not",
+        "from",
+        "into",
+        "onto",
+        "upon",
+        "as",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "this",
+        "that",
+        "these",
+        "those",
+        "its",
+        "it",
+        "via",
+        "using",
+        "based",
+        "new",
+        "novel",
+        "study",
+        "studies",
+        "review",
     }
 )
 
@@ -97,9 +173,7 @@ def _word_overlap_score(norm_title: str, norm_text: str) -> float:
     boundary artefacts from PDF text extraction that sink ``partial_ratio``.
     Both arguments must already be normalized via :func:`_normalize`.
     """
-    title_words = {
-        w for w in re.findall(r"\w{4,}", norm_title) if w not in _STOPWORDS
-    }
+    title_words = {w for w in re.findall(r"\w{4,}", norm_title) if w not in _STOPWORDS}
     if not title_words:
         return 0.0
     hits = sum(1 for w in title_words if w in norm_text)
@@ -163,13 +237,9 @@ def verify_metadata(
         norm_title = _normalize(title)
         partial = _title_score(norm_title, norm_text)
         overlap = _word_overlap_score(norm_title, norm_text)
-        doi_confirmed = _doi_prefix_in_text(
-            header.get("doi") or "", first_pages_text
-        )
+        doi_confirmed = _doi_prefix_in_text(header.get("doi") or "", first_pages_text)
         title_ok = (
-            partial >= threshold
-            or overlap >= word_overlap_threshold
-            or doi_confirmed
+            partial >= threshold or overlap >= word_overlap_threshold or doi_confirmed
         )
         if not title_ok:
             warnings.append(

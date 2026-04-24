@@ -85,13 +85,17 @@ class TestDOIExtraction:
 
 class TestPII:
     def test_pii_to_doi_with_prefix(self):
-        assert _pii_to_doi("PII: S0009-2614(95)00905-J") == "10.1016/S0009-2614(95)00905-J"
+        assert (
+            _pii_to_doi("PII: S0009-2614(95)00905-J") == "10.1016/S0009-2614(95)00905-J"
+        )
 
     def test_pii_to_doi_without_s(self):
         assert _pii_to_doi("0009-2614(80)80221-1") == "10.1016/0009-2614(80)80221-1"
 
     def test_pii_to_doi_busca(self):
-        assert _pii_to_doi("PII: S0926-3373(98)00040-X") == "10.1016/S0926-3373(98)00040-X"
+        assert (
+            _pii_to_doi("PII: S0926-3373(98)00040-X") == "10.1016/S0926-3373(98)00040-X"
+        )
 
     def test_pii_to_doi_no_match(self):
         assert _pii_to_doi("The Grotthuss mechanism") is None
@@ -183,7 +187,10 @@ class TestExtractDOIFromFilename:
     """Generalised filename → DOI heuristic for archival reprints."""
 
     def test_nature_old_style(self):
-        assert extract_doi_from_filename("/papers/nature01797.pdf") == "10.1038/nature01797"
+        assert (
+            extract_doi_from_filename("/papers/nature01797.pdf")
+            == "10.1038/nature01797"
+        )
         assert extract_doi_from_filename("nature02792.pdf") == "10.1038/nature02792"
 
     def test_nmat(self):
@@ -193,7 +200,9 @@ class TestExtractDOIFromFilename:
 
     def test_nano_dotted_new_style(self):
         # nnano.2013.167 → 10.1038/nnano.2013.167
-        assert extract_doi_from_filename("nnano.2013.167.pdf") == "10.1038/nnano.2013.167"
+        assert (
+            extract_doi_from_filename("nnano.2013.167.pdf") == "10.1038/nnano.2013.167"
+        )
 
     def test_s_prefix_new_doi_style(self):
         # s41586-020-2649-2 → 10.1038/s41586-020-2649-2

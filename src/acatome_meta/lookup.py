@@ -97,7 +97,9 @@ def lookup(pdf_path: str) -> dict[str, Any]:
     info = pdf_meta.get("info", {})
     raw_title = info.get("title", "")
     return {
-        "title": "" if (is_pii(raw_title) or is_garbage_title(raw_title)) else raw_title,
+        "title": ""
+        if (is_pii(raw_title) or is_garbage_title(raw_title))
+        else raw_title,
         "authors": _parse_author_string(info.get("author", "")),
         "year": _parse_year(info.get("creationDate", "")),
         "doi": doi,
