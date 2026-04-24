@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from acatome_meta.crossref import lookup_crossref
-from acatome_meta.pdf import extract_pdf_meta, is_garbage_title, is_pii
+from acatome_meta.pdf import (
+    extract_doi_from_filename,
+    extract_pdf_meta,
+    is_garbage_title,
+    is_pii,
+)
 from acatome_meta.semantic_scholar import get_paper_by_id, lookup_s2
 
 # arXiv filename patterns: 2508.20254v1.pdf, 2310.18288v3.pdf, etc.
@@ -50,6 +55,24 @@ def lookup(pdf_path: str) -> dict[str, Any]:
             if not result.get("arxiv_id"):
                 result["arxiv_id"] = arxiv_id
             return result
+
+    # Try publisher-specific filename → DOI (Nature, APS, …).
+    #
+    # Some PDFs are archival reprints whose DOI isn't recoverable from body
+    # text (partial-page scans, out-of-order page reads, concatenated
+    # reprints). The filename often encodes the DOI directly — e.g.
+    # ``nature01797.pdf`` → ``10.1038/nature01797``. We verify the guess
+    # via CrossRef; a wrong guess returns None and the cascade falls through.
+    if not doi:
+        filename_doi = extract_doi_from_filename(pdf_path)
+        if filename_doi:
+            result = lookup_doi(filename_doi, mailto=mailto)
+            if result:
+                result["pdf_hash"] = pdf_meta["pdf_hash"]
+                result["page_count"] = pdf_meta["page_count"]
+                result["first_pages_text"] = pdf_meta["first_pages_text"]
+                result["source"] = "crossref_filename"
+                return result
 
     # Try title → S2 (skip PII strings and known-garbage patterns).
     #

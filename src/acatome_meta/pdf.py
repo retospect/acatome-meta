@@ -4,12 +4,31 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import fitz
 
 DOI_REGEX = re.compile(r"10\.\d{4,}/[^\s<\"}\)]+")
+
+# Prefixed-DOI: the publisher's own "this article's DOI is X" typographic
+# marker. Far more reliable than a bare DOI match, which might pick up a
+# reference-list citation to a different paper. Matches ``doi:X``,
+# ``doi.org/X``, ``DOI: X`` forms.
+_PREFIXED_DOI_RE = re.compile(
+    r"(?:\bdoi[:\s]+|(?:https?://)?(?:dx\.)?doi\.org/|\bDOI\s+)"
+    r"(10\.\d{4,}/[^\s<\"}\)]+)",
+    re.IGNORECASE,
+)
+
+# Heading that marks the start of a reference list. Bare DOIs appearing
+# after this heading are citations to other papers, not this paper's DOI.
+_REFERENCES_HEADING_RE = re.compile(
+    r"\n\s*(?:REFERENCES?|BIBLIOGRAPHY|WORKS\s+CITED|LITERATURE\s+CITED)"
+    r"(?:\s*AND\s+NOTES)?\s*\n",
+    re.IGNORECASE,
+)
 
 # Elsevier PII patterns — appear in title/subject fields of pre-2000 PDFs.
 # Formatted: S0009-2614(95)00905-J or 0009-2614(80)80221-1
@@ -44,15 +63,18 @@ def extract_pdf_meta(path: str | Path) -> dict[str, Any]:
     # Content hash
     pdf_hash = hashlib.sha256(path.read_bytes()).hexdigest()
 
-    # First 3 pages text (for verification + DOI extraction)
+    # First 5 pages text (for verification + DOI extraction). Five is a
+    # compromise: covers short papers (4–6 page Nature letters often have
+    # the DOI on the last page — see nature01797) without pulling in the
+    # full body of long review articles where the DOI is always on p1.
     first_pages_text = ""
-    for i in range(min(3, doc.page_count)):
+    for i in range(min(5, doc.page_count)):
         try:
             first_pages_text += doc[i].get_text() + "\n"
         except Exception:
             pass
 
-    # DOI extraction cascade: XMP → first-page text → info dict
+    # DOI extraction cascade: XMP → first-page text → info dict → filename
     doi = _extract_doi(xmp_raw, first_pages_text, info)
 
     page_count = doc.page_count
@@ -69,20 +91,39 @@ def extract_pdf_meta(path: str | Path) -> dict[str, Any]:
 
 
 def _extract_doi(xmp: str, first_pages: str, info: dict[str, Any]) -> str | None:
-    """Extract DOI using the three-source cascade."""
-    # 1. XMP XML
+    """Extract DOI using a confidence-ordered cascade.
+
+    Order (highest → lowest confidence):
+
+    1. Prefixed DOI (``doi:X``, ``doi.org/X``, ``DOI: X``) in body text —
+       publisher's own typeset marker. Survives partial-page extracts and
+       out-of-order page reads (e.g. nature01797 has its DOI on page 4).
+    2. XMP XML metadata.
+    3. Bare DOI in body text *before* any References heading. Bare DOIs
+       after References are reference-list citations to other papers.
+    4. Info dict fields (``doi``, ``subject``, ``keywords``).
+    5. Elsevier PII in title/subject, converted to DOI.
+    """
+    # 1. Prefixed DOI anywhere in body
+    if first_pages:
+        match = _PREFIXED_DOI_RE.search(first_pages)
+        if match:
+            return _clean_doi(match.group(1))
+
+    # 2. XMP XML
     if xmp:
         match = DOI_REGEX.search(xmp)
         if match:
             return _clean_doi(match.group())
 
-    # 2. First-page text
+    # 3. Bare DOI in body text, but only before the References section
     if first_pages:
-        match = DOI_REGEX.search(first_pages)
+        pre_refs = _trim_at_references(first_pages)
+        match = DOI_REGEX.search(pre_refs)
         if match:
             return _clean_doi(match.group())
 
-    # 3. Info dict fields
+    # 4. Info dict fields
     for key in ("doi", "subject", "keywords"):
         val = info.get(key, "")
         if val:
@@ -90,7 +131,7 @@ def _extract_doi(xmp: str, first_pages: str, info: dict[str, Any]) -> str | None
             if match:
                 return _clean_doi(match.group())
 
-    # 4. PII in title or subject → Elsevier DOI
+    # 5. PII in title or subject → Elsevier DOI
     title = info.get("title", "")
     subject = info.get("subject", "")
     for field in (title, subject):
@@ -100,6 +141,17 @@ def _extract_doi(xmp: str, first_pages: str, info: dict[str, Any]) -> str | None
                 return pii_doi
 
     return None
+
+
+def _trim_at_references(text: str) -> str:
+    """Return the portion of *text* before any References/Bibliography heading.
+
+    Used by :func:`_extract_doi` so that bare DOI regex matches don't pick
+    up reference-list citations (each of which is a DOI to a *different*
+    paper, not this paper's DOI).
+    """
+    m = _REFERENCES_HEADING_RE.search(text)
+    return text[: m.start()] if m else text
 
 
 def _pii_to_doi(text: str) -> str | None:
@@ -159,3 +211,87 @@ def is_garbage_title(text: str) -> bool:
 def _clean_doi(doi: str) -> str:
     """Strip trailing punctuation from extracted DOI."""
     return doi.rstrip(".,;:")
+
+
+# Filename → DOI patterns for archival reprints / partial-page scans where
+# the DOI isn't recoverable from body text or embedded metadata. Each entry
+# pairs a filename-stem regex with a function that builds the DOI.
+#
+# The returned DOI is a *guess*. Callers should verify via CrossRef; a
+# wrong guess simply produces a 404 and the lookup cascade falls through.
+#
+# Generalises the existing arXiv-filename heuristic in ``acatome_meta.lookup``
+# to Nature and APS archival filenames. Adding new publishers is append-only.
+_FILENAME_DOI_PATTERNS: list[tuple[re.Pattern[str], Callable[[re.Match[str]], str]]] = [
+    # Nature Publishing Group — OLD-style manuscript IDs (pre-2019 mostly).
+    # DOI form: 10.1038/<id>
+    # Covered journals: Nature, Nature Materials (nmat), Nature Physics
+    # (nphys), Nature Chemistry (nchem), Nature Nanotechnology (nnano),
+    # Nature Methods (nmeth), Nature Geoscience (ngeo), Nature Photonics
+    # (nphoton), Nature Climate Change (nclimate), Nature Plants (nplants),
+    # Nature Communications (ncomms), Nature Structural & Molecular
+    # Biology (nsmb), Nature Reviews {Immunology/Molecular Cell Biology/
+    # Genetics/Neuroscience/Cancer/Microbiology/Drug Discovery/Materials}
+    # (nri, nrm, nrg, nrn, nrc, nrmicro, nrd, nrmats), Nature Genetics
+    # (ng), Nature Immunology (ni), Nature Energy (nenergy), Nature
+    # Catalysis (ncatal), Nature Astronomy (nastron), Nature Electronics
+    # (nelectronics), Nature Microbiology (nmicrobiol), Nature
+    # Sustainability (nsustain), Nature Machine Intelligence (nmachintell).
+    # Examples: nature01797, nmat1849, nmat769, nnano.2013.167
+    (
+        re.compile(
+            r"^(n(?:ature|mat|phys|chem|nano|meth|geo|photon|climate|plants"
+            r"|comms|smb|rmicro|rmats|ri|rm|rg|rn|rc|rd|energy|catal|astron"
+            r"|electronics|microbiol|sustain|machintell|g|i)[\d.]+)"
+            r"(?:[\W_]|$)",
+            re.IGNORECASE,
+        ),
+        lambda m: f"10.1038/{m.group(1).lower().rstrip('.')}",
+    ),
+    # Nature Publishing Group — NEW-style article IDs (post-2019).
+    # DOI form: 10.1038/s<journal-id>-<yr>-<seq>-<check>
+    #   journal-id: 5 digits (e.g. s41586 = Nature, s41557 = Nature Chemistry,
+    #     s41467 = Nature Communications, s41593 = Nature Neuroscience …)
+    #   yr:         3 digits encoding year (020 = 2020, 025 = 2025)
+    #   seq:        4-6 digits (article sequence within year)
+    #   check:      1-2 alphanumerics (check character)
+    # Example filenames: s41586-020-2649-2.pdf, s41557-025-01815-x.pdf
+    (
+        re.compile(r"^(s\d{5}-\d{3}-\d+-[a-z0-9]+)(?:[\W_]|$)", re.IGNORECASE),
+        lambda m: f"10.1038/{m.group(1).lower()}",
+    ),
+    # APS (Physical Review family). DOI form: 10.1103/<id>
+    # Families: PhysRev[A-E], PhysRevLett, PhysRevX, PhysRevApplied,
+    # PhysRevFluids, PhysRevMaterials, PhysRevResearch, PhysRevSTAB,
+    # PhysRevAccelBeams, PhysRevPhysEducRes.
+    # Examples: PhysRevLett.89.106801, PhysRevB.63.193409
+    (
+        re.compile(
+            r"^(PhysRev(?:[A-E]|Lett|X|Applied|Fluids|Materials|Research"
+            r"|STAB|AccelBeams|PhysEducRes)?\.\d+\.\d+)(?:[\W_]|$)",
+            re.IGNORECASE,
+        ),
+        lambda m: f"10.1103/{m.group(1)}",
+    ),
+]
+
+
+def extract_doi_from_filename(path: str | Path) -> str | None:
+    """Extract a DOI guess from the filename using publisher-specific patterns.
+
+    Last-resort DOI hint for PDFs whose body text and embedded metadata
+    both lack the DOI (archival reprints, partial-page scans, out-of-order
+    page layouts that push the DOI past the extractable window).
+
+    The returned DOI is a *guess* derived purely from the filename. The
+    caller must verify it against an authoritative source (CrossRef) —
+    a wrong guess yields a 404 and the lookup cascade falls through.
+
+    Returns None if no pattern matches.
+    """
+    stem = Path(path).stem
+    for pattern, builder in _FILENAME_DOI_PATTERNS:
+        m = pattern.match(stem)
+        if m:
+            return builder(m)
+    return None

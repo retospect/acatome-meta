@@ -6,6 +6,8 @@ from acatome_meta.pdf import (
     _clean_doi,
     _extract_doi,
     _pii_to_doi,
+    _trim_at_references,
+    extract_doi_from_filename,
     is_garbage_title,
     is_pii,
 )
@@ -25,10 +27,34 @@ class TestDOIExtraction:
         assert _extract_doi("", "", info) == "10.1103/PhysRevLett.123.456"
 
     def test_doi_cascade_priority(self):
+        """A prefixed DOI in body text (publisher-typeset marker) outranks
+        XMP (which can be stale) and info-dict (which can be missing)."""
         xmp = "<dc:identifier>doi:10.1038/xmp-doi</dc:identifier>"
         text = "doi:10.1038/text-doi"
         info = {"doi": "10.1038/info-doi"}
-        assert _extract_doi(xmp, text, info) == "10.1038/xmp-doi"
+        assert _extract_doi(xmp, text, info) == "10.1038/text-doi"
+
+    def test_xmp_wins_over_bare_body_doi(self):
+        """When body DOI is bare (no prefix) but XMP has one, XMP wins —
+        bare body DOIs are often reference-list citations."""
+        xmp = "<dc:identifier>doi:10.1038/xmp-doi</dc:identifier>"
+        text = "See 10.1038/text-doi for a related paper."
+        assert _extract_doi(xmp, text, {}) == "10.1038/xmp-doi"
+
+    def test_bare_body_doi_before_references_used(self):
+        """Bare DOI in body before any References heading is this paper's."""
+        text = "Acme et al. 2024. 10.1038/paper-doi Received today."
+        assert _extract_doi("", text, {}) == "10.1038/paper-doi"
+
+    def test_bare_body_doi_after_references_skipped(self):
+        """Bare DOI after References is a citation to another paper; skip it."""
+        text = (
+            "Abstract content here with no prefixed DOI.\n"
+            "References\n"
+            "1. Smith, J. Nature 500, 10.1038/cited-other-paper (2020)."
+        )
+        # No prefixed DOI, no XMP, bare DOI is in references section → None
+        assert _extract_doi("", text, {}) is None
 
     def test_no_doi_found(self):
         assert _extract_doi("", "no doi here", {}) is None
@@ -125,3 +151,102 @@ class TestGarbageTitle:
         ]
         for title in real:
             assert is_garbage_title(title) is False, f"false positive: {title!r}"
+
+
+class TestTrimAtReferences:
+    def test_no_references_heading(self):
+        text = "Abstract and content.\nSome body text."
+        assert _trim_at_references(text) == text
+
+    def test_references_uppercase(self):
+        text = "Body text here.\nREFERENCES\n1. Smith 2020\n2. Doe 2021"
+        trimmed = _trim_at_references(text)
+        assert "1. Smith" not in trimmed
+        assert "Body text here." in trimmed
+
+    def test_references_mixed_case(self):
+        text = "Abstract.\nReferences\n1. Smith."
+        assert "1. Smith" not in _trim_at_references(text)
+
+    def test_bibliography_heading(self):
+        text = "Content.\nBibliography\n1. Ref."
+        assert "1. Ref" not in _trim_at_references(text)
+
+    def test_acknowledgements_not_confused_with_references(self):
+        # Acknowledgements does NOT terminate the scan zone — paper's own
+        # DOI is sometimes typeset in the Acknowledgements/footer block.
+        text = "Body.\nAcknowledgements\nWe thank X."
+        assert _trim_at_references(text) == text
+
+
+class TestExtractDOIFromFilename:
+    """Generalised filename → DOI heuristic for archival reprints."""
+
+    def test_nature_old_style(self):
+        assert extract_doi_from_filename("/papers/nature01797.pdf") == "10.1038/nature01797"
+        assert extract_doi_from_filename("nature02792.pdf") == "10.1038/nature02792"
+
+    def test_nmat(self):
+        assert extract_doi_from_filename("nmat1849.pdf") == "10.1038/nmat1849"
+        # trailing "-2" version suffix
+        assert extract_doi_from_filename("nmat769-2.pdf") == "10.1038/nmat769"
+
+    def test_nano_dotted_new_style(self):
+        # nnano.2013.167 → 10.1038/nnano.2013.167
+        assert extract_doi_from_filename("nnano.2013.167.pdf") == "10.1038/nnano.2013.167"
+
+    def test_s_prefix_new_doi_style(self):
+        # s41586-020-2649-2 → 10.1038/s41586-020-2649-2
+        assert (
+            extract_doi_from_filename("/in/s41586-020-2649-2.pdf")
+            == "10.1038/s41586-020-2649-2"
+        )
+
+    def test_physrevlett(self):
+        assert (
+            extract_doi_from_filename("PhysRevLett.89.106801.pdf")
+            == "10.1103/PhysRevLett.89.106801"
+        )
+
+    def test_physrevlett_with_page_suffix(self):
+        assert (
+            extract_doi_from_filename("PhysRevLett.89.106801-6.pdf")
+            == "10.1103/PhysRevLett.89.106801"
+        )
+
+    def test_physrevb(self):
+        assert (
+            extract_doi_from_filename("/archive/PhysRevB.63.193409.pdf")
+            == "10.1103/PhysRevB.63.193409"
+        )
+
+    def test_physrevx(self):
+        assert (
+            extract_doi_from_filename("PhysRevX.12.012345.pdf")
+            == "10.1103/PhysRevX.12.012345"
+        )
+
+    def test_physrev_materials(self):
+        assert (
+            extract_doi_from_filename("PhysRevMaterials.5.033405.pdf")
+            == "10.1103/PhysRevMaterials.5.033405"
+        )
+
+    def test_slug_filename_no_match(self):
+        # Human-readable slugs have no DOI pattern
+        assert extract_doi_from_filename("graphene-mos2-hybrid-technology.pdf") is None
+        assert extract_doi_from_filename("some-random-paper.pdf") is None
+
+    def test_arxiv_style_no_match(self):
+        # arXiv filenames are handled by the arxiv extractor, not this one
+        assert extract_doi_from_filename("2508.20254v1.pdf") is None
+
+    def test_unknown_publisher_no_false_match(self):
+        # Filename looks DOI-like but pattern isn't known → None, not a guess
+        assert extract_doi_from_filename("unknown-prefix-12345.pdf") is None
+
+    def test_case_insensitive_nature(self):
+        assert extract_doi_from_filename("NATURE01797.pdf") == "10.1038/nature01797"
+
+    def test_empty_filename(self):
+        assert extract_doi_from_filename(".pdf") is None
