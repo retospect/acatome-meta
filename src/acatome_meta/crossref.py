@@ -31,15 +31,79 @@ def lookup_crossref(doi: str, mailto: str = "") -> dict[str, Any] | None:
 
 
 def _normalize(msg: dict[str, Any], doi: str) -> dict[str, Any]:
-    """Normalize CrossRef response to acatome header format."""
-    authors = []
-    for a in msg.get("author", []):
-        name_parts = []
-        if a.get("family"):
-            name_parts.append(a["family"])
-        if a.get("given"):
-            name_parts.append(a["given"])
-        authors.append({"name": ", ".join(name_parts)})
+    """Normalize CrossRef response to acatome header format.
+
+    Crossref ``author`` entries come in three flavours:
+
+    * ``{"family": "Smith", "given": "John"}`` — typical natural person.
+    * ``{"name": "OECD"}`` — corporate / organisational author (no
+      family/given split).
+    * ``{"name": "Master of Science in Management, ..."}`` — affiliation
+      strings mistakenly inserted as author entries by some publishers
+      (e.g. some open-access journals). These poison the slug, so we drop
+      them.
+
+    The order is preserved so the slug surname comes from the first valid
+    natural author when one is present, falling back to a corporate name
+    only when no real authors exist. ``editor`` is consulted as a
+    last-resort fallback for collected volumes / proceedings whose
+    Crossref record carries editors but no authors (e.g.
+    ``10.1007/978-3-031-04881-4`` — *Pattern Recognition and Image
+    Analysis*).
+    """
+
+    def _looks_like_affiliation(s: str) -> bool:
+        """Heuristic: affiliation strings have a comma + institutional cue."""
+        low = s.lower()
+        cues = (
+            "university",
+            "institute",
+            "college",
+            "school of",
+            "department",
+            "faculty",
+            "laboratory",
+            ", usa",
+            ", uk",
+            ", germany",
+            ", france",
+            ", canada",
+            ", japan",
+            ", india",
+            ", china",
+            ", australia",
+        )
+        return "," in s and any(c in low for c in cues)
+
+    authors: list[dict[str, str]] = []
+    raw_authors = msg.get("author") or []
+    raw_editors = msg.get("editor") or []
+
+    for a in raw_authors:
+        family = (a.get("family") or "").strip()
+        given = (a.get("given") or "").strip()
+        if family or given:
+            parts = [p for p in (family, given) if p]
+            authors.append({"name": ", ".join(parts)})
+            continue
+        # Corporate or affiliation-mistaken entry — only the ``name`` field is set.
+        name = (a.get("name") or "").strip()
+        if not name or _looks_like_affiliation(name):
+            continue
+        authors.append({"name": name})
+
+    # Editors are a last-resort fallback for edited collections.
+    if not authors:
+        for e in raw_editors:
+            family = (e.get("family") or "").strip()
+            given = (e.get("given") or "").strip()
+            if family or given:
+                parts = [p for p in (family, given) if p]
+                authors.append({"name": ", ".join(parts)})
+            else:
+                name = (e.get("name") or "").strip()
+                if name and not _looks_like_affiliation(name):
+                    authors.append({"name": name})
 
     year = None
     for date_field in ("published-print", "published-online", "created"):

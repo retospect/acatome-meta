@@ -106,9 +106,42 @@ class TestMakeSlug:
         assert make_slug([{"name": "Smith"}], 2024, "") == "smith2024untitled"
 
     def test_semicolon_separated_authors(self):
+        # Slug uses surname only (last word of first author), so first/middle
+        # names from semicolon-packed strings drop away cleanly.
         authors = [{"name": "Daniel S. Levine; Nicholas Liesen; Lauren Chua"}]
+        assert make_slug(authors, 2026, "Open Polymers Dataset") == "levine2026open"
+
+    def test_first_last_uses_surname_only(self):
+        # "First Last" form must produce the same slug as "Last, First" — this
+        # is the canonical fix for duplicate slugs like
+        # `danielslevine2026open` vs `levine2026open` and
+        # `albertpbartok2010gaussian` vs `bartok2010gaussian`.
+        a = make_slug([{"name": "Albert P. Bartok"}], 2010, "Gaussian Approximation")
+        b = make_slug([{"name": "Bartok, Albert P."}], 2010, "Gaussian Approximation")
+        assert a == b == "bartok2010gaussian"
+
+    def test_first_last_drops_middle_initials(self):
         assert (
-            make_slug(authors, 2026, "Open Polymers Dataset") == "danielslevine2026open"
+            make_slug([{"name": "Daniel S. Levine"}], 2026, "Open Polymers Dataset")
+            == "levine2026open"
+        )
+
+    def test_scandinavian_letters_fold_explicitly(self):
+        # ``ø`` does not NFKD-decompose, so the bare ascii encoding silently
+        # dropped it — producing ``nrskov`` instead of ``norskov`` for the
+        # well-known Nørskov DFT papers. This test pins the explicit fold.
+        assert (
+            make_slug(
+                [{"name": "Nørskov, J. K."}],
+                2009,
+                "Towards the computational design of solid catalysts",
+            )
+            == "norskov2009towards"
+        )
+
+    def test_german_eszett_folds(self):
+        assert make_slug([{"name": "Straße, Hans"}], 2024, "Quantum") == (
+            "strasse2024quantum"
         )
 
     def test_surname_length_cap(self):

@@ -241,6 +241,48 @@ class TestExtractDOIFromFilename:
             == "10.1103/PhysRevMaterials.5.033405"
         )
 
+    def test_rsc_article_id(self):
+        # Royal Society of Chemistry article IDs are the deterministic
+        # "decade-letter + year + journal-code + sequence + check" form.
+        assert (
+            extract_doi_from_filename("c8me00086g.pdf") == "10.1039/c8me00086g"
+        )
+        assert (
+            extract_doi_from_filename("c8ee00122g.pdf") == "10.1039/c8ee00122g"
+        )
+        assert (
+            extract_doi_from_filename("d1ee01170g.pdf") == "10.1039/d1ee01170g"
+        )
+        # trailing -N version suffix
+        assert (
+            extract_doi_from_filename("c0lc00403k-3.pdf") == "10.1039/c0lc00403k"
+        )
+
+    def test_doi_as_filename_underscore(self):
+        # Common when a user saves a PDF with the DOI in the name,
+        # replacing the ``/`` with ``_``.
+        assert (
+            extract_doi_from_filename("10.30501_jree.2015.70071-4.pdf")
+            == "10.30501/jree.2015.70071-4"
+        )
+        # Nature DOI legitimately ends in ``-N`` — must not be stripped.
+        assert (
+            extract_doi_from_filename("10.1038_s41560-021-00973-9.pdf")
+            == "10.1038/s41560-021-00973-9"
+        )
+
+    def test_doi_as_filename_no_underscore_no_match(self):
+        # Filename starts with 10. but has no underscore separator → not a
+        # DOI-as-filename (could be e.g. "10.x.y.report.pdf").
+        assert extract_doi_from_filename("10.30501.jree.report.pdf") is None
+
+    def test_rsc_uppercase(self):
+        # The article-id check letter and journal code are always lowercase
+        # in the canonical DOI, even if the filename was uppercase.
+        assert (
+            extract_doi_from_filename("C8ME00086G.pdf") == "10.1039/c8me00086g"
+        )
+
     def test_slug_filename_no_match(self):
         # Human-readable slugs have no DOI pattern
         assert extract_doi_from_filename("graphene-mos2-hybrid-technology.pdf") is None

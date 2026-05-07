@@ -273,6 +273,43 @@ _FILENAME_DOI_PATTERNS: list[tuple[re.Pattern[str], Callable[[re.Match[str]], st
         ),
         lambda m: f"10.1103/{m.group(1)}",
     ),
+    # Generic "DOI as filename" — common when a user saves a PDF with the
+    # DOI in the filename, replacing the ``/`` with ``_`` because the
+    # filesystem won't allow it. The DOI prefix (``10.NNNN``) anchors the
+    # match so we don't mis-fire on arbitrary underscores.
+    #
+    # We deliberately do NOT strip a trailing ``-N`` "download-manager
+    # version" suffix here because Nature-style DOIs legitimately end in
+    # ``-N`` (e.g. ``10.1038/s41560-021-00973-9``) and over-stripping
+    # would mangle them. CrossRef returns 404 on a wrongly-suffixed guess,
+    # which the cascade in :func:`acatome_meta.lookup.lookup` catches and
+    # falls through to title / S2 lookup; that's a cheaper failure than
+    # silently returning the wrong paper.
+    #
+    # Example filenames:
+    #   * ``10.30501_jree.2015.70071-4.pdf`` → guess
+    #     ``10.30501/jree.2015.70071-4`` (404 → cascade falls through to
+    #     title search, which finds the JREE paper).
+    #   * ``10.1038_s41560-021-00973-9.pdf`` → guess
+    #     ``10.1038/s41560-021-00973-9`` (200, correct).
+    (
+        re.compile(r"^(10\.\d{3,9})_([\w./\-]+)$"),
+        lambda m: f"{m.group(1)}/{m.group(2)}",
+    ),
+    # Royal Society of Chemistry (RSC). DOI form: 10.1039/<id>
+    # Article IDs use a 4-segment fixed scheme:
+    #   - decade letter: ``c`` (2000s/2010s) or ``d`` (2020s+)
+    #   - 1 digit:       year-of-decade
+    #   - 2 letters:     journal code (ee=Energy Environ. Sci., me=Mol. Syst.
+    #                    Des. Eng., lc=Lab Chip, sc=Chem. Sci., ta=J. Mater.
+    #                    Chem. A, cc=Chem. Commun., cs=Chem. Soc. Rev., …)
+    #   - 5 digits:      sequence within journal-year
+    #   - 1 letter:      check character
+    # Example filenames: c8me00086g, c8ee00122g, d1ee01170g, c0lc00403k.
+    (
+        re.compile(r"^([cd]\d[a-z]{2}\d{5}[a-z])(?:[\W_]|$)", re.IGNORECASE),
+        lambda m: f"10.1039/{m.group(1).lower()}",
+    ),
 ]
 
 

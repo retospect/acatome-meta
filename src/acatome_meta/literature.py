@@ -138,9 +138,43 @@ def first_author_surname(authors: Any) -> str:
     return surname_from_name(_first_name_field(authors))
 
 
+# Letters that are NOT NFKD-decomposable but have well-established ASCII
+# replacements in citation keys. NFKD alone would silently drop these,
+# producing slugs like ``nrskov2009towards`` (Nørskov) or ``mller2024quantum``
+# (Müller-Plathe — never happens, but the same drop). We fold them
+# explicitly so surname-only slugs are stable across sources.
+_ASCII_FALLBACKS = str.maketrans(
+    {
+        "ø": "o",
+        "Ø": "O",
+        "æ": "ae",
+        "Æ": "AE",
+        "œ": "oe",
+        "Œ": "OE",
+        "ß": "ss",
+        "ł": "l",
+        "Ł": "L",
+        "ð": "d",
+        "Ð": "D",
+        "þ": "th",
+        "Þ": "Th",
+    }
+)
+
+
 def _ascii_fold(text: str) -> str:
-    """NFKD-normalise and drop non-ASCII characters."""
-    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    """NFKD-normalise and drop non-ASCII characters.
+
+    Also folds Scandinavian / Eastern-European letters that NFKD does not
+    decompose (``ø``, ``æ``, ``ß``, ``ł`` etc.) to ASCII equivalents so the
+    citation key stays useful — without this, ``Nørskov`` would slug as
+    ``nrskov`` rather than ``norskov``.
+    """
+    return (
+        unicodedata.normalize("NFKD", text.translate(_ASCII_FALLBACKS))
+        .encode("ascii", "ignore")
+        .decode()
+    )
 
 
 def make_slug(
@@ -153,15 +187,19 @@ def make_slug(
     Format: ``{surname}{year}{keyword}`` — ASCII-only, lowercase.
 
     Rules:
-      * Surname is folded to ASCII and capped at 30 characters; falls back to
-        ``"anon"`` when no author is present.
+      * Surname is the *last word* of the first author's name (handling both
+        "Last, First" and "First Last" conventions), folded to ASCII and
+        capped at 30 characters; falls back to ``"anon"`` when no author is
+        present. Dropping first/middle names keeps slugs canonical across
+        sources that disagree on author-name presentation (Crossref returns
+        "Last, First" while Semantic Scholar may return "First Last").
       * Year falls back to ``"0000"``.
       * Keyword is the first content word of the title that is not a common
         stopword; non-Latin titles get a short SHA-256 hash as keyword;
         empty titles use ``"untitled"``.
     """
-    raw_key = first_author_key(authors)
-    surname = _ascii_fold(raw_key.lower())
+    raw_surname = first_author_surname(authors)
+    surname = _ascii_fold(raw_surname.lower())
     surname = re.sub(r"[^a-z]", "", surname)[:_SURNAME_MAX_LENGTH] or "anon"
 
     yr = str(year) if year else "0000"
