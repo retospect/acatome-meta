@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path
@@ -15,6 +16,8 @@ from acatome_meta.pdf import (
     is_pii,
 )
 from acatome_meta.semantic_scholar import get_paper_by_id, lookup_s2
+
+log = logging.getLogger(__name__)
 
 # arXiv filename patterns: 2508.20254v1.pdf, 2310.18288v3.pdf, etc.
 _ARXIV_FILENAME_RE = re.compile(r"(\d{4}\.\d{4,5})(v\d+)?")
@@ -42,6 +45,7 @@ def lookup(pdf_path: str) -> dict[str, Any]:
             result["pdf_hash"] = pdf_meta["pdf_hash"]
             result["page_count"] = pdf_meta["page_count"]
             result["first_pages_text"] = pdf_meta["first_pages_text"]
+            _augment_with_s2_cluster(result, doi=doi, s2_key=s2_key)
             return result
 
     # Try arxiv ID from filename → S2
@@ -72,6 +76,7 @@ def lookup(pdf_path: str) -> dict[str, Any]:
                 result["page_count"] = pdf_meta["page_count"]
                 result["first_pages_text"] = pdf_meta["first_pages_text"]
                 result["source"] = "crossref_filename"
+                _augment_with_s2_cluster(result, doi=filename_doi, s2_key=s2_key)
                 return result
 
     # Try title → S2 (skip PII strings and known-garbage patterns).
@@ -116,6 +121,46 @@ def lookup(pdf_path: str) -> dict[str, Any]:
 def lookup_doi(doi: str, mailto: str = "") -> dict[str, Any] | None:
     """Look up metadata by DOI via CrossRef."""
     return lookup_crossref(doi, mailto=mailto)
+
+
+def _augment_with_s2_cluster(
+    result: dict[str, Any], *, doi: str, s2_key: str = ""
+) -> None:
+    """Mutate *result* in place to add ``external_ids`` + ``s2_id`` from S2.
+
+    Called after a successful CrossRef lookup so the downstream bundle
+    carries the full Semantic Scholar ``externalIds`` cluster (DOI,
+    ArXiv, PubMed, MAG, DBLP, CorpusId, OpenAlex, …). Without this, the
+    most common ingest path — journal PDF with embedded DOI → CrossRef
+    hit — drops every alias except the canonical DOI, and precis-mcp
+    only learns about the rest after a separate ``enrich-paper-
+    identifiers`` sweep.
+
+    Failure modes (S2 down, rate-limited, DOI not in S2's index) are
+    silent: ``result`` keeps its CrossRef shape and the cluster will be
+    backfilled by the next sweep. Existing keys are NEVER overwritten —
+    CrossRef wins on title / authors / year / journal because it's the
+    canonical publisher record.
+    """
+    if not doi:
+        return
+    try:
+        s2 = get_paper_by_id(f"DOI:{doi}", api_key=s2_key)
+    except Exception as exc:  # network / unexpected upstream raise
+        log.debug("S2 cluster augment failed for DOI %s: %s", doi, exc)
+        return
+    if not s2:
+        return
+    ext = s2.get("external_ids") or {}
+    if ext:
+        result["external_ids"] = ext
+    # Adopt s2_id if CrossRef didn't carry one.
+    if not result.get("s2_id") and s2.get("s2_id"):
+        result["s2_id"] = s2["s2_id"]
+    # Adopt arxiv_id if CrossRef didn't carry one (CrossRef rarely does;
+    # S2 attaches the arXiv preprint to the journal record routinely).
+    if not result.get("arxiv_id") and s2.get("arxiv_id"):
+        result["arxiv_id"] = s2["arxiv_id"]
 
 
 def lookup_title(title: str, s2_key: str = "") -> dict[str, Any] | None:
