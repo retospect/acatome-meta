@@ -75,21 +75,33 @@ def _normalize(paper: Any) -> dict[str, Any]:
             name = getattr(a, "name", None) or str(a)
             authors.append({"name": name})
 
+    # Capture the FULL externalIds cluster verbatim (S2 keys: DOI,
+    # ArXiv, PubMed, PubMedCentralID, MAG, DBLP, CorpusId, OpenAlex)
+    # so the precis ingest path can write a `ref_identifiers` row per
+    # alias. Two papers will frequently share a paper-id cluster but
+    # carry a journal DOI, an arXiv DOI, a PubMed id, and an OpenAlex
+    # id all at once — capturing all of them up front means the alias
+    # index is fully populated at ingest time without any second S2
+    # round-trip. Older bundles missing this field are handled
+    # gracefully by precis (empty dict default).
+    raw_external = getattr(paper, "externalIds", None) or {}
+    external_ids: dict[str, str] = {}
+    if raw_external:
+        for k, v in raw_external.items():
+            if not k or v is None:
+                continue
+            sv = str(v).strip()
+            if sv:
+                external_ids[str(k)] = sv
+
     return {
         "title": getattr(paper, "title", "") or "",
         "authors": authors,
         "year": getattr(paper, "year", None),
-        "doi": (
-            getattr(paper, "externalIds", {}).get("DOI")
-            if hasattr(paper, "externalIds") and paper.externalIds
-            else None
-        ),
-        "arxiv_id": (
-            getattr(paper, "externalIds", {}).get("ArXiv")
-            if hasattr(paper, "externalIds") and paper.externalIds
-            else None
-        ),
+        "doi": external_ids.get("DOI"),
+        "arxiv_id": external_ids.get("ArXiv"),
         "s2_id": getattr(paper, "paperId", None),
+        "external_ids": external_ids,
         "journal": getattr(paper, "venue", "") or "",
         "abstract": getattr(paper, "abstract", "") or "",
         "entry_type": "article",
